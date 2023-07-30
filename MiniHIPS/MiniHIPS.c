@@ -374,6 +374,8 @@ Return Value:
 	NTSTATUS status;
 
 	UNREFERENCED_PARAMETER(RegistryPath);
+	UNREFERENCED_PARAMETER(DriverObject);
+
 
 	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
 		("MiniHIPS!DriverEntry: Entered\n"));
@@ -402,7 +404,7 @@ Return Value:
 		}
 	}
 
-	return status;
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -446,8 +448,6 @@ Return Value:
 *************************************************************************/
 
 UNICODE_STRING ExtractFileName(_In_ PFLT_CALLBACK_DATA Data) {
-
-	PAGED_CODE();
 
 	NTSTATUS status;
 	UNICODE_STRING ret = { 0 };
@@ -537,7 +537,16 @@ Return Value:
 		}
 	}
 
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("PreOP: %wZ\n", ExtractFileName(Data)));
+	UNICODE_STRING path = ExtractFileName(Data);
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("PreOP: %wZ\n", path));
+
+	UNICODE_STRING gProtectedFile = RTL_CONSTANT_STRING(L"\\Device\\HarddiskVolume3\\Users\\WDKRemoteUser\\Desktop\\test.txt");
+
+
+	if (RtlEqualUnicodeString(&path, &gProtectedFile, TRUE)) {
+		DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "PreOP: Protected file rule hit: %wZ\n", path);
+		return FLT_PREOP_COMPLETE;
+	}
 
 	// This template code does not do anything with the callbackData, but
 	// rather returns FLT_PREOP_SUCCESS_WITH_CALLBACK.
@@ -645,7 +654,15 @@ Return Value:
 	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
 		("MiniHIPS!MiniHIPSPostOperation: Entered\n"));
 
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("PostOp: %wZ\n", ExtractFileName(Data)));
+	UNICODE_STRING path = ExtractFileName(Data);
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("PostOp: %wZ\n", path));
+	
+	UNICODE_STRING gProtectedFile = RTL_CONSTANT_STRING(L"\\Device\\HarddiskVolume3\\Users\\WDKRemoteUser\\Desktop\\test.txt");
+
+	if (RtlEqualUnicodeString(&path, &gProtectedFile, TRUE)) {
+		DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "PostOP: Protected file rule hit: %wZ\n", path);
+		return FLT_POSTOP_FINISHED_PROCESSING;
+	}
 
 	return FLT_POSTOP_FINISHED_PROCESSING;
 }
