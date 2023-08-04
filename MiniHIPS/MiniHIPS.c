@@ -93,21 +93,6 @@ MiniHIPSOperationStatusCallback(
 	_In_ PVOID RequesterContext
 );
 
-FLT_POSTOP_CALLBACK_STATUS
-MiniHIPSPostOperation(
-	_Inout_ PFLT_CALLBACK_DATA Data,
-	_In_ PCFLT_RELATED_OBJECTS FltObjects,
-	_In_opt_ PVOID CompletionContext,
-	_In_ FLT_POST_OPERATION_FLAGS Flags
-);
-
-FLT_PREOP_CALLBACK_STATUS
-MiniHIPSPreOperationNoPostOperation(
-	_Inout_ PFLT_CALLBACK_DATA Data,
-	_In_ PCFLT_RELATED_OBJECTS FltObjects,
-	_Flt_CompletionContext_Outptr_ PVOID* CompletionContext
-);
-
 BOOLEAN
 MiniHIPSDoRequestOperationStatus(
 	_In_ PFLT_CALLBACK_DATA Data
@@ -137,25 +122,24 @@ CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
 	{ IRP_MJ_CREATE,
 	  0,
 	  MiniHIPSPreOperation,
-	  MiniHIPSPostOperation },
+	  NULL },
 
 	{ IRP_MJ_READ,
 	  0,
 	  MiniHIPSPreOperation,
-	  MiniHIPSPostOperation },
+	  NULL },
 
-	  //    Not needed for now
-	  //    { IRP_MJ_WRITE,
-	  //      0,
-	  //      MiniHIPSPreOperation,
-	  //      MiniHIPSPostOperation },
+	{ IRP_MJ_WRITE,
+	  0,
+	  MiniHIPSPreOperation,
+	  NULL },
 
-		  { IRP_MJ_SET_INFORMATION,   // Monitor delete file
-			0,
-			MiniHIPSPreOperation,
-			MiniHIPSPostOperation },
+	{ IRP_MJ_SET_INFORMATION,   // Monitor delete file
+	  0,
+	  MiniHIPSPreOperation,
+	  NULL },
 
-		  { IRP_MJ_OPERATION_END }
+	{ IRP_MJ_OPERATION_END }
 };
 
 //
@@ -444,10 +428,10 @@ Return Value:
 
 
 /*************************************************************************
-	MiniFilter callback routines.
+	MiniFilter utility functions.
 *************************************************************************/
-
-UNICODE_STRING ExtractFileName(_In_ PFLT_CALLBACK_DATA Data) {
+UNICODE_STRING
+ExtractFileName(_In_ PFLT_CALLBACK_DATA Data) {
 
 	NTSTATUS status;
 	UNICODE_STRING ret = { 0 };
@@ -464,7 +448,8 @@ UNICODE_STRING ExtractFileName(_In_ PFLT_CALLBACK_DATA Data) {
 			status = FltParseFileNameInformation(pNameInfo);
 			if (NT_SUCCESS(status)) {
 				RtlCreateUnicodeString(&ret, pNameInfo->Name.Buffer);
-			} else {
+			}
+			else {
 				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
 					("Calling FltParseFileNameInformation() failed, err: %d\n", status));
 			}
@@ -475,6 +460,12 @@ UNICODE_STRING ExtractFileName(_In_ PFLT_CALLBACK_DATA Data) {
 
 	return ret;
 }
+
+
+
+/*************************************************************************
+	MiniFilter callback routines.
+*************************************************************************/
 
 FLT_PREOP_CALLBACK_STATUS
 MiniHIPSPreOperation(
@@ -514,6 +505,11 @@ Return Value:
 
 	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
 		("MiniHIPS!MiniHIPSPreOperation: Entered\n"));
+	
+	// We don't intercept I/O requests from kernel
+	if (Data->RequestorMode == KernelMode) {
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
 
 	//
 	//  See if this is an operation we would like the operation status
@@ -540,19 +536,29 @@ Return Value:
 	UNICODE_STRING path = ExtractFileName(Data);
 	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("PreOP: %wZ\n", path));
 
-	UNICODE_STRING gProtectedFile = RTL_CONSTANT_STRING(L"\\Device\\HarddiskVolume3\\Users\\WDKRemoteUser\\Desktop\\test.txt");
+	UNICODE_STRING ProtectedPattern = RTL_CONSTANT_STRING(L"\\*\\USERS\\WDKREMOTEUSER\\DESKTOP\\*.TXT");
 
+	if (FsRtlIsNameInExpression(&ProtectedPattern, &path, TRUE, NULL)) {
+		PEPROCESS TargetProcess = IoThreadToProcess(Data->Thread);
+		HANDLE Pid = PsGetProcessId(TargetProcess);
+		PUNICODE_STRING ProcessName = NULL;
+		SeLocateProcessImageName(TargetProcess, &ProcessName);
 
-	if (RtlEqualUnicodeString(&path, &gProtectedFile, TRUE)) {
 		DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "PreOP: Protected file rule hit: %wZ\n", path);
+		DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "PreOP: MajorFunction: %d, ProcessName: %wZ, PID: %p\n", Data->Iopb->MajorFunction, ProcessName, Pid);
+
+		IRP_MJ_CREATE;
+
+
+		Data->IoStatus.Status = STATUS_ACCESS_DENIED;
 		return FLT_PREOP_COMPLETE;
 	}
 
 	// This template code does not do anything with the callbackData, but
-	// rather returns FLT_PREOP_SUCCESS_WITH_CALLBACK.
+	// rather returns FLT_PREOP_SUCCESS_NO_CALLBACK.
 	// This passes the request down to the next miniFilter in the chain.
 
-	return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+	return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
 
@@ -609,108 +615,6 @@ Return Value:
 			ParameterSnapshot->MajorFunction,
 			ParameterSnapshot->MinorFunction,
 			FltGetIrpName(ParameterSnapshot->MajorFunction)));
-}
-
-
-FLT_POSTOP_CALLBACK_STATUS
-MiniHIPSPostOperation(
-	_Inout_ PFLT_CALLBACK_DATA Data,
-	_In_ PCFLT_RELATED_OBJECTS FltObjects,
-	_In_opt_ PVOID CompletionContext,
-	_In_ FLT_POST_OPERATION_FLAGS Flags
-)
-/*++
-
-Routine Description:
-
-	This routine is the post-operation completion routine for this
-	miniFilter.
-
-	This is non-pageable because it may be called at DPC level.
-
-Arguments:
-
-	Data - Pointer to the filter callbackData that is passed to us.
-
-	FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-		opaque handles to this filter, instance, its associated volume and
-		file object.
-
-	CompletionContext - The completion context set in the pre-operation routine.
-
-	Flags - Denotes whether the completion is successful or is being drained.
-
-Return Value:
-
-	The return value is the status of the operation.
-
---*/
-{
-	UNREFERENCED_PARAMETER(Data);
-	UNREFERENCED_PARAMETER(FltObjects);
-	UNREFERENCED_PARAMETER(CompletionContext);
-	UNREFERENCED_PARAMETER(Flags);
-
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
-		("MiniHIPS!MiniHIPSPostOperation: Entered\n"));
-
-	UNICODE_STRING path = ExtractFileName(Data);
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("PostOp: %wZ\n", path));
-	
-	UNICODE_STRING gProtectedFile = RTL_CONSTANT_STRING(L"\\Device\\HarddiskVolume3\\Users\\WDKRemoteUser\\Desktop\\test.txt");
-
-	if (RtlEqualUnicodeString(&path, &gProtectedFile, TRUE)) {
-		DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "PostOP: Protected file rule hit: %wZ\n", path);
-		return FLT_POSTOP_FINISHED_PROCESSING;
-	}
-
-	return FLT_POSTOP_FINISHED_PROCESSING;
-}
-
-
-FLT_PREOP_CALLBACK_STATUS
-MiniHIPSPreOperationNoPostOperation(
-	_Inout_ PFLT_CALLBACK_DATA Data,
-	_In_ PCFLT_RELATED_OBJECTS FltObjects,
-	_Flt_CompletionContext_Outptr_ PVOID* CompletionContext
-)
-/*++
-
-Routine Description:
-
-	This routine is a pre-operation dispatch routine for this miniFilter.
-
-	This is non-pageable because it could be called on the paging path
-
-Arguments:
-
-	Data - Pointer to the filter callbackData that is passed to us.
-
-	FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-		opaque handles to this filter, instance, its associated volume and
-		file object.
-
-	CompletionContext - The context for the completion routine for this
-		operation.
-
-Return Value:
-
-	The return value is the status of the operation.
-
---*/
-{
-	UNREFERENCED_PARAMETER(Data);
-	UNREFERENCED_PARAMETER(FltObjects);
-	UNREFERENCED_PARAMETER(CompletionContext);
-
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
-		("MiniHIPS!MiniHIPSPreOperationNoPostOperation: Entered\n"));
-
-	// This template code does not do anything with the callbackData, but
-	// rather returns FLT_PREOP_SUCCESS_NO_CALLBACK.
-	// This passes the request down to the next miniFilter in the chain.
-
-	return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
 
