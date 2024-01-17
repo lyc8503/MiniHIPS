@@ -1,0 +1,2 @@
+#define MINIHIPS_API __declspec(dllexport)
+#define MINIHIPS_API __declspec(dllimport)
