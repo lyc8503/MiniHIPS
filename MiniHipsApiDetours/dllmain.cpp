@@ -14,7 +14,7 @@ static HANDLE(WINAPI* TrueCreateFileW)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBU
 HANDLE WINAPI HookedCreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes,
     DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
 {
-    MessageBox(NULL, L"Hooked CreateFileW", L"Hi", MB_OK);
+    //MessageBox(NULL, L"Hooked CreateFileW", L"Hi", MB_OK);
 
     WCHAR canonicalPath[MAX_PATH + 100];
     HRESULT hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), lpFileName, PATHCCH_ALLOW_LONG_PATHS);
