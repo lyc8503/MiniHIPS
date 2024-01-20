@@ -2,11 +2,15 @@
 #include "pch.h"
 #include <windows.h>
 #include "detours/detours.h"
+
 #include <shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
 #include <pathcch.h>
 #pragma comment(lib, "pathcch.lib")
 #include <shellapi.h>
+
+#include <winternl.h>
+#include <ntstatus.h>
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -28,8 +32,9 @@ void DebugPrint(const wchar_t* format, ...) {
 #define DebugPrint(format, ...) ((void)0)
 #endif
 
-
-static HANDLE(WINAPI* TrueCreateFileW)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE) = CreateFileW;
+// https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile
+typedef NTSTATUS(NTAPI* PFNNtCreateFile) (PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK, PLARGE_INTEGER, ULONG, ULONG, ULONG, ULONG, PVOID, ULONG);
+static PFNNtCreateFile TrueNtCreateFile = NULL;
 
 static BOOL(WINAPI* TrueCreateProcessW)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION) = CreateProcessW;
 static BOOL(WINAPI* TrueCreateProcessAsUserW)(HANDLE, LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION) = CreateProcessAsUserW;
@@ -37,29 +42,27 @@ static BOOL(WINAPI* TrueCreateProcessAsUserW)(HANDLE, LPCWSTR, LPWSTR, LPSECURIT
 static HINSTANCE(WINAPI* TrueShellExecuteW)(HWND, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, INT) = ShellExecuteW;
 
 
-
-HANDLE WINAPI HookedCreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-    DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile)
+NTSTATUS NTAPI HookedNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+    PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess,
+    ULONG CreateDisposition, ULONG CreateOptions, PVOID EaBuffer, ULONG EaLength)
 {
-    //MessageBox(NULL, L"Hooked CreateFileW", L"Hi", MB_OK);
-    DebugPrint(L"Hooked CreateFileW: %s", lpFileName);
+	//MessageBox(NULL, L"Hooked NtCreateFile", L"Hi", MB_OK);
+    DebugPrint(L"Hooked NtCreateFile: %s", ObjectAttributes->ObjectName->Buffer);
 
     WCHAR canonicalPath[MAX_PATH + 100];
-    HRESULT hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), lpFileName, PATHCCH_ALLOW_LONG_PATHS);
-
+    HRESULT hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), ObjectAttributes->ObjectName->Buffer, PATHCCH_ALLOW_LONG_PATHS);
     if (!SUCCEEDED(hr)) {
-        SetLastError(ERROR_INTERNAL_ERROR);
-        return INVALID_HANDLE_VALUE;
-    }
+		return STATUS_INTERNAL_ERROR;
+	}
     
-    DebugPrint(L"canonicalPath: %s", canonicalPath);
-    if (PathMatchSpecW(canonicalPath, TEXT("C:\\*.txt"))) {
-        DebugPrint(L"Rejected: %s", canonicalPath);
-        SetLastError(ERROR_ACCESS_DENIED);
-        return INVALID_HANDLE_VALUE;
-    }
+	DebugPrint(L"canonicalPath: %s", canonicalPath);
+    if (PathMatchSpecW(canonicalPath, TEXT("\\??\\C:\\*.txt"))) {
+		DebugPrint(L"Rejected: %s", canonicalPath);
+		return STATUS_ACCESS_DENIED;
+	}
 
-    return TrueCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+	return TrueNtCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, AllocationSize, FileAttributes, ShareAccess,
+        		CreateDisposition, CreateOptions, EaBuffer, EaLength);
 }
 
 
@@ -96,13 +99,35 @@ HINSTANCE WINAPI HookedShellExecuteW(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpF
 }
 
 
+
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
                        LPVOID lpReserved
                      )
 {
-
     DebugPrint(L"Enter MiniHipsApiDetours.dll DllMain, PID: %lu, reason: %lu", GetCurrentProcessId(), ul_reason_for_call);
+
+    if (ul_reason_for_call != DLL_PROCESS_ATTACH) {
+        // Return on DLL_THREAD_ATTACH, DLL_THREAD_DETACH and DLL_PROCESS_DETACH
+		return TRUE;
+	}
+
+    // Dynamically load Native APIs
+    if (TrueNtCreateFile == NULL) {
+        HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+        if (hNtdll == NULL) {
+            DebugPrint(L"GetModuleHandleW(ntdll.dll) failed, return");
+            return FALSE;
+        }
+
+        TrueNtCreateFile = (PFNNtCreateFile)GetProcAddress(hNtdll, "NtCreateFile");
+        
+        DebugPrint(L"GetProcAddress(NtCreateFile) = %p", TrueNtCreateFile);
+        if (TrueNtCreateFile == NULL) {
+            DebugPrint(L"GetProcAddress(NtCreateFile) failed, return");
+            return FALSE;
+        }
+    }
 
     // https://github.com/microsoft/Detours/wiki/OverviewHelpers
     // Immediately return TRUE if DetourIsHelperProcess return TRUE. 
@@ -110,26 +135,23 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DebugPrint(L"DetourIsHelperProcess() = true, return");
         return TRUE;
     }
+    
+    // MessageBox(NULL, L"Hello from DLL", L"Hi", MB_OK);
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
 
-    switch (ul_reason_for_call)
-    {
-    case DLL_PROCESS_ATTACH:
-        // MessageBox(NULL, L"Hello from DLL", L"Hi", MB_OK);
-        DetourTransactionBegin();
-        DetourUpdateThread(GetCurrentThread());
-        DetourAttach(&(PVOID&)TrueCreateFileW, HookedCreateFileW);
+    DetourAttach(&(PVOID&)TrueNtCreateFile, HookedNtCreateFile);
 
-        DetourAttach(&(PVOID&)TrueCreateProcessW, HookedCreateProcessW);
-        DetourAttach(&(PVOID&)TrueCreateProcessAsUserW, HookedCreateProcessAsUserW);
+    DetourAttach(&(PVOID&)TrueCreateProcessW, HookedCreateProcessW);
+    DetourAttach(&(PVOID&)TrueCreateProcessAsUserW, HookedCreateProcessAsUserW);
         
-        DetourAttach(&(PVOID&)TrueShellExecuteW, HookedShellExecuteW);
-        DetourTransactionCommit();
-        break;
-    case DLL_THREAD_ATTACH:
-    case DLL_THREAD_DETACH:
-    case DLL_PROCESS_DETACH:
-        break;
-    }
+    DetourAttach(&(PVOID&)TrueShellExecuteW, HookedShellExecuteW);
+    if (DetourTransactionCommit() != NO_ERROR) {
+		DebugPrint(L"DetourTransactionCommit failed, return");
+		return FALSE;
+	}
+    DebugPrint(L"AfterDetourAttach NtCreateFile = %p", TrueNtCreateFile);
+
     return TRUE;
 }
 
