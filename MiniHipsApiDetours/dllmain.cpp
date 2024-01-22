@@ -1,4 +1,9 @@
-// dllmain.cpp : Defines the entry point for the DLL application.
+// dllmain.cpp :
+// This DLL is injected into all processes to intercept certain API calls. Specifically, 
+// the system calls 'NtCreateFile' and 'NtOpenFile' are intercepted to regulate file access, 
+// and 'NtCreateUserProcess' is intercepted to ensure the DLL is injected into any newly
+// created subprocesses.
+
 #include "pch.h"
 #include <windows.h>
 #include "detours/detours.h"
@@ -7,7 +12,6 @@
 #pragma comment(lib, "shlwapi.lib")
 #include <pathcch.h>
 #pragma comment(lib, "pathcch.lib")
-#include <shellapi.h>
 
 #include <winternl.h>
 #include <ntstatus.h>
@@ -39,12 +43,12 @@ static PFNNtCreateFile TrueNtCreateFile = NULL;
 typedef NTSTATUS(NTAPI* PFNNtOpenFile) (PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK, ULONG, ULONG);
 static PFNNtOpenFile TrueNtOpenFile = NULL;
 
-static BOOL(WINAPI* TrueCreateProcessW)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION) = CreateProcessW;
-static BOOL(WINAPI* TrueCreateProcessAsUserW)(HANDLE, LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION) = CreateProcessAsUserW;
-
-static HINSTANCE(WINAPI* TrueShellExecuteW)(HWND, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, INT) = ShellExecuteW;
+typedef NTSTATUS(NTAPI* PFNNtCreateUserProcess) (PHANDLE, PHANDLE, ACCESS_MASK, ACCESS_MASK, POBJECT_ATTRIBUTES, POBJECT_ATTRIBUTES, ULONG, ULONG, PRTL_USER_PROCESS_PARAMETERS, PVOID, PVOID);
+static PFNNtCreateUserProcess TrueNtCreateUserProcess = NULL;
 
 
+// The function 'HookedNtCreateFile' is an implementation that intercepts the original 'NtCreateFile' system call.
+// It applies custom security rules to file creation operations. If a rule is violated, the function returns a STATUS_ACCESS_DENIED error.
 NTSTATUS NTAPI HookedNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
     PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess,
     ULONG CreateDisposition, ULONG CreateOptions, PVOID EaBuffer, ULONG EaLength)
@@ -69,6 +73,8 @@ NTSTATUS NTAPI HookedNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
 }
 
 
+// The function 'HookedNtOpenFile' is an implementation that intercepts the original 'NtCreateFile' system call.
+// It applies custom security rules to file open operations. If a rule is violated, the function returns a STATUS_ACCESS_DENIED error.
 NTSTATUS NTAPI HookedNtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
     PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions)
 {
@@ -91,40 +97,23 @@ NTSTATUS NTAPI HookedNtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, P
 }
 
 
-BOOL WINAPI HookedCreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine, LPSECURITY_ATTRIBUTES lpProcessAttributes,
-    LPSECURITY_ATTRIBUTES lpThreadAttributes, BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment,
-    LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation)
+// The 'HookedNtCreateUserProcess' function is designed to replace the original 'NtCreateUserProcess' system call.
+// Its purpose is to ensure that this DLL is automatically injected into every newly created subprocess, thereby extending
+// the interception and custom handling to child processes as well.
+NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHandle, ACCESS_MASK ProcessDesiredAccess,
+    ACCESS_MASK ThreadDesiredAccess, POBJECT_ATTRIBUTES ProcessObjectAttributes, POBJECT_ATTRIBUTES ThreadObjectAttributes,
+    ULONG CreateProcessFlags, ULONG CreateThreadFlags, PRTL_USER_PROCESS_PARAMETERS ProcessParameters, PVOID CreateInfo,
+    PVOID AttributeList)
 {
-	MessageBox(NULL, L"Hooked CreateProcessW", L"Hi", MB_OK);
-	DebugPrint(L"Hooked CreateProcessW: %s", lpCommandLine);
+    MessageBox(NULL, L"Hooked NtCreateUserProcess", L"Hi", MB_OK);
 
-	return TrueCreateProcessW(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags,
-        		lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation);
+	return TrueNtCreateUserProcess(ProcessHandle, ThreadHandle, ProcessDesiredAccess, ThreadDesiredAccess, ProcessObjectAttributes,
+        				ThreadObjectAttributes, CreateProcessFlags, CreateThreadFlags, ProcessParameters, CreateInfo, AttributeList);
 }
 
 
-BOOL WINAPI HookedCreateProcessAsUserW(HANDLE hToken, LPCWSTR lpApplicationName, LPWSTR lpCommandLine, LPSECURITY_ATTRIBUTES lpProcessAttributes,
-    LPSECURITY_ATTRIBUTES lpThreadAttributes, BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment,
-    LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation)
-{
-	MessageBox(NULL, L"Hooked CreateProcessAsUserW", L"Hi", MB_OK);
-	DebugPrint(L"Hooked CreateProcessAsUserW: %s", lpCommandLine);
-
-	return TrueCreateProcessAsUserW(hToken, lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags,
-        				lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation);
-}
-
-
-HINSTANCE WINAPI HookedShellExecuteW(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd)
-{
-	MessageBox(NULL, L"Hooked ShellExecuteW", L"Hi", MB_OK);
-	DebugPrint(L"Hooked ShellExecuteW: %s", lpFile);
-
-	return TrueShellExecuteW(hwnd, lpOperation, lpFile, lpParameters, lpDirectory, nShowCmd);
-}
-
-
-
+// 'DllMain' serves as the entry point when the DLL is loaded into a process. It is responsible 
+// for initiating the API detouring within the host process to facilitate the above-mentioned functionalities.
 BOOL APIENTRY DllMain( HMODULE hModule,
                        DWORD  ul_reason_for_call,
                        LPVOID lpReserved
@@ -136,6 +125,13 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         // Return on DLL_THREAD_ATTACH, DLL_THREAD_DETACH and DLL_PROCESS_DETACH
 		return TRUE;
 	}
+
+    // https://github.com/microsoft/Detours/wiki/OverviewHelpers
+    // Immediately return TRUE if DetourIsHelperProcess return TRUE. 
+    if (DetourIsHelperProcess()) {
+        DebugPrint(L"DetourIsHelperProcess() = true, return");
+        return TRUE;
+    }
 
     // Dynamically load Native APIs
     HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
@@ -158,11 +154,11 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 		return FALSE;
 	}
 
-    // https://github.com/microsoft/Detours/wiki/OverviewHelpers
-    // Immediately return TRUE if DetourIsHelperProcess return TRUE. 
-    if (DetourIsHelperProcess()) {
-        DebugPrint(L"DetourIsHelperProcess() = true, return");
-        return TRUE;
+    TrueNtCreateUserProcess = (PFNNtCreateUserProcess)GetProcAddress(hNtdll, "NtCreateUserProcess");
+    DebugPrint(L"GetProcAddress(NtCreateUserProcess) = %p", TrueNtCreateUserProcess);
+    if (TrueNtCreateUserProcess == NULL) {
+        DebugPrint(L"GetProcAddress(NtCreateUserProcess) failed, return");
+        return FALSE;
     }
     
     // MessageBox(NULL, L"Hello from DLL", L"Hi", MB_OK);
@@ -171,17 +167,15 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 
     DetourAttach(&(PVOID&)TrueNtCreateFile, HookedNtCreateFile);
     DetourAttach(&(PVOID&)TrueNtOpenFile, HookedNtOpenFile);
+    DetourAttach(&(PVOID&)TrueNtCreateUserProcess, HookedNtCreateUserProcess);
 
-    DetourAttach(&(PVOID&)TrueCreateProcessW, HookedCreateProcessW);
-    DetourAttach(&(PVOID&)TrueCreateProcessAsUserW, HookedCreateProcessAsUserW);
-        
-    DetourAttach(&(PVOID&)TrueShellExecuteW, HookedShellExecuteW);
     if (DetourTransactionCommit() != NO_ERROR) {
 		DebugPrint(L"DetourTransactionCommit failed, return");
 		return FALSE;
 	}
     DebugPrint(L"AfterDetourAttach NtCreateFile = %p", TrueNtCreateFile);
     DebugPrint(L"AfterDetourAttach NtOpenFile = %p", TrueNtOpenFile);
+    DebugPrint(L"AfterDetourAttach NtCreateUserProcess = %p", TrueNtCreateUserProcess);
 
     return TRUE;
 }
