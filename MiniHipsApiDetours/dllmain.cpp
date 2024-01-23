@@ -19,6 +19,37 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+
+// Taken from https://github.com/winsiderss/systeminformer/blob/master/phnt/include/ntpsapi.h#L1330
+#define PROCESS_CREATE_FLAGS_BREAKAWAY 0x00000001 // NtCreateProcessEx & NtCreateUserProcess
+#define PROCESS_CREATE_FLAGS_NO_DEBUG_INHERIT 0x00000002 // NtCreateProcessEx & NtCreateUserProcess
+#define PROCESS_CREATE_FLAGS_INHERIT_HANDLES 0x00000004 // NtCreateProcessEx & NtCreateUserProcess
+#define PROCESS_CREATE_FLAGS_OVERRIDE_ADDRESS_SPACE 0x00000008 // NtCreateProcessEx only
+#define PROCESS_CREATE_FLAGS_LARGE_PAGES 0x00000010 // NtCreateProcessEx only, requires SeLockMemory
+#define PROCESS_CREATE_FLAGS_LARGE_PAGE_SYSTEM_DLL 0x00000020 // NtCreateProcessEx only, requires SeLockMemory
+#define PROCESS_CREATE_FLAGS_PROTECTED_PROCESS 0x00000040 // NtCreateUserProcess only
+#define PROCESS_CREATE_FLAGS_CREATE_SESSION 0x00000080 // NtCreateProcessEx & NtCreateUserProcess, requires SeLoadDriver
+#define PROCESS_CREATE_FLAGS_INHERIT_FROM_PARENT 0x00000100 // NtCreateProcessEx & NtCreateUserProcess
+#define PROCESS_CREATE_FLAGS_SUSPENDED 0x00000200 // NtCreateProcessEx & NtCreateUserProcess
+#define PROCESS_CREATE_FLAGS_FORCE_BREAKAWAY 0x00000400 // NtCreateProcessEx & NtCreateUserProcess, requires SeTcb
+#define PROCESS_CREATE_FLAGS_MINIMAL_PROCESS 0x00000800 // NtCreateProcessEx only
+#define PROCESS_CREATE_FLAGS_RELEASE_SECTION 0x00001000 // NtCreateProcessEx & NtCreateUserProcess
+#define PROCESS_CREATE_FLAGS_CLONE_MINIMAL 0x00002000 // NtCreateProcessEx only
+#define PROCESS_CREATE_FLAGS_CLONE_MINIMAL_REDUCED_COMMIT 0x00004000 //
+#define PROCESS_CREATE_FLAGS_AUXILIARY_PROCESS 0x00008000 // NtCreateProcessEx & NtCreateUserProcess, requires SeTcb
+#define PROCESS_CREATE_FLAGS_CREATE_STORE 0x00020000 // NtCreateProcessEx only
+#define PROCESS_CREATE_FLAGS_USE_PROTECTED_ENVIRONMENT 0x00040000 // NtCreateProcessEx & NtCreateUserProces
+
+#define THREAD_CREATE_FLAGS_CREATE_SUSPENDED 0x00000001 // NtCreateUserProcess & NtCreateThreadEx
+#define THREAD_CREATE_FLAGS_SKIP_THREAD_ATTACH 0x00000002 // NtCreateThreadEx only
+#define THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER 0x00000004 // NtCreateThreadEx only
+#define THREAD_CREATE_FLAGS_LOADER_WORKER 0x00000010 // NtCreateThreadEx only
+#define THREAD_CREATE_FLAGS_SKIP_LOADER_INIT 0x00000020 // NtCreateThreadEx only
+#define THREAD_CREATE_FLAGS_BYPASS_PROCESS_FREEZE 0x00000040 // NtCreateThreadEx only
+#define THREAD_CREATE_FLAGS_INITIAL_THREAD 0x00000080 // ?
+
+
+
 #ifdef _DEBUG
 void DebugPrint(const wchar_t* format, ...);
 void DebugPrint(const wchar_t* format, ...) {
@@ -53,11 +84,18 @@ NTSTATUS NTAPI HookedNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
     PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess,
     ULONG CreateDisposition, ULONG CreateOptions, PVOID EaBuffer, ULONG EaLength)
 {
-	//MessageBox(NULL, L"Hooked NtCreateFile", L"Hi", MB_OK);
-    DebugPrint(L"Hooked NtCreateFile: %s", ObjectAttributes->ObjectName->Buffer);
+    //MessageBox(NULL, L"Hooked NtCreateFile", L"Hi", MB_OK);
 
     WCHAR canonicalPath[MAX_PATH + 100];
-    HRESULT hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), ObjectAttributes->ObjectName->Buffer, PATHCCH_ALLOW_LONG_PATHS);
+    HRESULT hr;
+    if (ObjectAttributes == NULL || ObjectAttributes->ObjectName == NULL || ObjectAttributes->ObjectName->Buffer == NULL) {
+		DebugPrint(L"Hooked NtCreateFile: ObjectAttributes->ObjectName->Buffer is NULL");
+		goto origin;
+	}
+
+    DebugPrint(L"Hooked NtCreateFile: %s", ObjectAttributes->ObjectName->Buffer);
+
+    hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), ObjectAttributes->ObjectName->Buffer, PATHCCH_ALLOW_LONG_PATHS);
     if (!SUCCEEDED(hr)) {
 		return STATUS_INTERNAL_ERROR;
 	}
@@ -68,6 +106,7 @@ NTSTATUS NTAPI HookedNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
 		return STATUS_ACCESS_DENIED;
 	}
 
+origin:
 	return TrueNtCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, AllocationSize, FileAttributes, ShareAccess,
         		CreateDisposition, CreateOptions, EaBuffer, EaLength);
 }
@@ -78,11 +117,18 @@ NTSTATUS NTAPI HookedNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
 NTSTATUS NTAPI HookedNtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
     PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions)
 {
-	//MessageBox(NULL, L"Hooked NtOpenFile", L"Hi", MB_OK);
-	DebugPrint(L"Hooked NtOpenFile: %s", ObjectAttributes->ObjectName->Buffer);
+    //MessageBox(NULL, L"Hooked NtOpenFile", L"Hi", MB_OK);
 
 	WCHAR canonicalPath[MAX_PATH + 100];
-	HRESULT hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), ObjectAttributes->ObjectName->Buffer, PATHCCH_ALLOW_LONG_PATHS);
+	HRESULT hr;
+    if (ObjectAttributes == NULL || ObjectAttributes->ObjectName == NULL || ObjectAttributes->ObjectName->Buffer == NULL) {
+        DebugPrint(L"Hooked NtOpenFile: ObjectAttributes->ObjectName->Buffer is NULL");
+        goto origin;
+    }
+
+	DebugPrint(L"Hooked NtOpenFile: %s", ObjectAttributes->ObjectName->Buffer);
+
+	hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), ObjectAttributes->ObjectName->Buffer, PATHCCH_ALLOW_LONG_PATHS);
     if (!SUCCEEDED(hr)) {
 		return STATUS_INTERNAL_ERROR;
 	}
@@ -93,6 +139,7 @@ NTSTATUS NTAPI HookedNtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, P
 		return STATUS_ACCESS_DENIED;
 	}
 
+ origin:
 	return TrueNtOpenFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, ShareAccess, OpenOptions);
 }
 
@@ -105,8 +152,34 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
     ULONG CreateProcessFlags, ULONG CreateThreadFlags, PRTL_USER_PROCESS_PARAMETERS ProcessParameters, PVOID CreateInfo,
     PVOID AttributeList)
 {
-    MessageBox(NULL, L"Hooked NtCreateUserProcess", L"Hi", MB_OK);
+    NTSTATUS status;
 
+    if (ProcessParameters == NULL || ProcessParameters->CommandLine.Buffer == NULL) {
+		DebugPrint(L"Hooked NtCreateUserProcess: ProcessParameters->CommandLine.Buffer is NULL");
+		goto origin;
+	}
+
+    DebugPrint(L"Hooked NtCreateUserProcess: %s, creating SUSPENDED", ProcessParameters->CommandLine.Buffer);
+
+    // Definitions of dwCreationFlags don't apply here
+    // Refer to: https://captmeelo.com/redteam/maldev/2022/05/10/ntcreateuserprocess.html
+
+    // TODO
+    CreateProcessFlags |= PROCESS_CREATE_FLAGS_SUSPENDED;
+    CreateThreadFlags |= THREAD_CREATE_FLAGS_CREATE_SUSPENDED;
+
+    status = TrueNtCreateUserProcess(ProcessHandle, ThreadHandle, ProcessDesiredAccess, ThreadDesiredAccess, ProcessObjectAttributes,
+        						ThreadObjectAttributes, CreateProcessFlags, CreateThreadFlags, ProcessParameters, CreateInfo, AttributeList);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    // Inject the DLL into the newly created process
+
+
+    return status;
+
+origin:
 	return TrueNtCreateUserProcess(ProcessHandle, ThreadHandle, ProcessDesiredAccess, ThreadDesiredAccess, ProcessObjectAttributes,
         				ThreadObjectAttributes, CreateProcessFlags, CreateThreadFlags, ProcessParameters, CreateInfo, AttributeList);
 }
