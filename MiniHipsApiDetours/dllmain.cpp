@@ -156,34 +156,53 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
 
     if (ProcessParameters == NULL || ProcessParameters->CommandLine.Buffer == NULL) {
 		DebugPrint(L"Hooked NtCreateUserProcess: ProcessParameters->CommandLine.Buffer is NULL");
-		goto origin;
+        status = STATUS_INTERNAL_ERROR;
+        goto exit;
 	}
 
     DebugPrint(L"Hooked NtCreateUserProcess: %s, creating SUSPENDED", ProcessParameters->CommandLine.Buffer);
 
     // Definitions of dwCreationFlags don't apply here
     // Refer to: https://captmeelo.com/redteam/maldev/2022/05/10/ntcreateuserprocess.html
-
     // TODO
-    CreateProcessFlags |= PROCESS_CREATE_FLAGS_SUSPENDED;
-    CreateThreadFlags |= THREAD_CREATE_FLAGS_CREATE_SUSPENDED;
+
+    // According to https://medium.com/@Achilles8284/the-birth-of-a-process-part-2-97c6fb9c42a2
+    // CreateProcess generally sets the THREAD_CREATE_FLAGS_CREATE_SUSPENDED flag when calling NtCreateUserProcess
+    if (!(CreateThreadFlags & THREAD_CREATE_FLAGS_CREATE_SUSPENDED)) {
+        DebugPrint(L"CreateThreadFlags & THREAD_CREATE_FLAGS_CREATE_SUSPENDED is false, return");
+        status = STATUS_INTERNAL_ERROR;
+        goto exit;
+    }
+    // CreateProcessFlags |= PROCESS_CREATE_FLAGS_SUSPENDED;
+    // CreateThreadFlags |= THREAD_CREATE_FLAGS_CREATE_SUSPENDED;
 
     status = TrueNtCreateUserProcess(ProcessHandle, ThreadHandle, ProcessDesiredAccess, ThreadDesiredAccess, ProcessObjectAttributes,
         						ThreadObjectAttributes, CreateProcessFlags, CreateThreadFlags, ProcessParameters, CreateInfo, AttributeList);
     if (!NT_SUCCESS(status)) {
-        return status;
+        // Process creation failed, return original status
+        goto exit;
     }
 
-    // Inject the DLL into the newly created process
+    // Inject self into the newly created process
 
 
-    return status;
+cleanup:
+    if (ProcessHandle != NULL && *ProcessHandle != NULL) {
+        TerminateProcess(*ProcessHandle, 233);
+        CloseHandle(*ProcessHandle);
+		*ProcessHandle = NULL;
+	}
 
-origin:
-	return TrueNtCreateUserProcess(ProcessHandle, ThreadHandle, ProcessDesiredAccess, ThreadDesiredAccess, ProcessObjectAttributes,
-        				ThreadObjectAttributes, CreateProcessFlags, CreateThreadFlags, ProcessParameters, CreateInfo, AttributeList);
+    if (ThreadHandle != NULL && *ThreadHandle != NULL) {
+		CloseHandle(*ThreadHandle);
+		*ThreadHandle = NULL;
+	}
+
+exit:
+    return status;	
 }
 
+WCHAR SelfPath[MAX_PATH];
 
 // 'DllMain' serves as the entry point when the DLL is loaded into a process. It is responsible 
 // for initiating the API detouring within the host process to facilitate the above-mentioned functionalities.
@@ -205,6 +224,13 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DebugPrint(L"DetourIsHelperProcess() = true, return");
         return TRUE;
     }
+
+    // Retrieve the current dll's path for subsequent injection into sub-processes
+    if (GetModuleFileName(hModule, SelfPath, MAX_PATH) == 0) {
+        DebugPrint(L"GetModuleFileName failed, return");
+		return FALSE;
+    }
+    DebugPrint(L"SelfPath: %s", SelfPath);
 
     // Dynamically load Native APIs
     HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
