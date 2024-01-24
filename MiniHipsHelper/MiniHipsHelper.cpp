@@ -5,49 +5,35 @@
 #include "framework.h"
 #include "MiniHipsHelper.h"
 
+#include "MiniHipsLib.h"
 
-MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, const char* dllPath)
+
+MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, LPCWSTR lpszDllPath)
 {
-	HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, dwProcessId);
-	if (hProcess == NULL)
-	{
-		return -1;
+	HANDLE hProcess;
+	DWORD dwInjectRet;
+	DWORD dwRetCode;
+
+	// Open the target process
+	hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, dwProcessId);
+	if (hProcess == NULL) {
+		dwRetCode = 1;
+		goto cleanup;
 	}
 
-	LPVOID pRemoteBuf = VirtualAllocEx(hProcess, NULL, strlen(dllPath) + 1, MEM_COMMIT, PAGE_READWRITE);
-	if (pRemoteBuf == NULL)
-	{
-		return -2;
+	dwInjectRet = InjectDll(hProcess, lpszDllPath);
+
+	if (dwInjectRet != 0) {
+		dwRetCode = dwInjectRet;
+		goto cleanup;
 	}
 
-	if (!WriteProcessMemory(hProcess, pRemoteBuf, (LPVOID)dllPath, strlen(dllPath) + 1, NULL))
-	{
-		return -3;
+	dwRetCode = 0;
+
+cleanup:
+	if (hProcess != NULL) {
+		CloseHandle(hProcess);
 	}
-
-	HMODULE hMod = GetModuleHandleA("kernel32.dll");
-	if (hMod == NULL)
-	{
-		return -4;
-	}
-
-	LPVOID pLoadLibraryA = (LPVOID)GetProcAddress(hMod, "LoadLibraryA");
-	if (pLoadLibraryA == NULL)
-	{
-		return -5;
-	}
-
-	HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pLoadLibraryA, pRemoteBuf, 0, NULL);
-	if (hThread == NULL)
-	{
-		return -6;
-	}
-
-	WaitForSingleObject(hThread, INFINITE);
-
-	VirtualFreeEx(hProcess, pRemoteBuf, 0, MEM_RELEASE);
-	CloseHandle(hThread);
-	CloseHandle(hProcess);
 
 	return 0;
 }

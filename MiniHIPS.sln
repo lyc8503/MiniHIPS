@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MiniHipsApiDetours", "MiniH
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MiniHipsHelper", "MiniHipsHelper\MiniHipsHelper.vcxproj", "{7F603527-7167-4EE6-8341-E6CF4D301B9E}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MiniHipsLib", "MiniHipsLib\MiniHipsLib.vcxproj", "{2A446BAE-13D0-4F00-AF86-F789372C07C9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -31,6 +33,14 @@ Global
 		{7F603527-7167-4EE6-8341-E6CF4D301B9E}.Release|x64.Build.0 = Release|x64
 		{7F603527-7167-4EE6-8341-E6CF4D301B9E}.Release|x86.ActiveCfg = Release|Win32
 		{7F603527-7167-4EE6-8341-E6CF4D301B9E}.Release|x86.Build.0 = Release|Win32
+		{2A446BAE-13D0-4F00-AF86-F789372C07C9}.Debug|x64.ActiveCfg = Debug|x64
+		{2A446BAE-13D0-4F00-AF86-F789372C07C9}.Debug|x64.Build.0 = Debug|x64
+		{2A446BAE-13D0-4F00-AF86-F789372C07C9}.Debug|x86.ActiveCfg = Debug|Win32
+		{2A446BAE-13D0-4F00-AF86-F789372C07C9}.Debug|x86.Build.0 = Debug|Win32
+		{2A446BAE-13D0-4F00-AF86-F789372C07C9}.Release|x64.ActiveCfg = Release|x64
+		{2A446BAE-13D0-4F00-AF86-F789372C07C9}.Release|x64.Build.0 = Release|x64
+		{2A446BAE-13D0-4F00-AF86-F789372C07C9}.Release|x86.ActiveCfg = Release|Win32
+		{2A446BAE-13D0-4F00-AF86-F789372C07C9}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

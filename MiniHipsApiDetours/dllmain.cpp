@@ -16,8 +16,7 @@
 #include <winternl.h>
 #include <ntstatus.h>
 
-#include <stdio.h>
-#include <stdarg.h>
+#include "MiniHipsLib.h"
 
 
 // Taken from https://github.com/winsiderss/systeminformer/blob/master/phnt/include/ntpsapi.h#L1330
@@ -49,24 +48,6 @@
 #define THREAD_CREATE_FLAGS_INITIAL_THREAD 0x00000080 // ?
 
 
-
-#ifdef _DEBUG
-void DebugPrint(const wchar_t* format, ...);
-void DebugPrint(const wchar_t* format, ...) {
-    wchar_t buffer[1024];
-    va_list args;
-
-    va_start(args, format);
-    _vsnwprintf_s(buffer, ARRAYSIZE(buffer) - 1, _TRUNCATE, format, args);
-    buffer[ARRAYSIZE(buffer) - 1] = 0; // Ensure null-termination
-    va_end(args);
-
-    OutputDebugStringW(buffer);
-}
-#else
-#define DebugPrint(format, ...) ((void)0)
-#endif
-
 // https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile
 typedef NTSTATUS(NTAPI* PFNNtCreateFile) (PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK, PLARGE_INTEGER, ULONG, ULONG, ULONG, ULONG, PVOID, ULONG);
 static PFNNtCreateFile TrueNtCreateFile = NULL;
@@ -76,6 +57,9 @@ static PFNNtOpenFile TrueNtOpenFile = NULL;
 
 typedef NTSTATUS(NTAPI* PFNNtCreateUserProcess) (PHANDLE, PHANDLE, ACCESS_MASK, ACCESS_MASK, POBJECT_ATTRIBUTES, POBJECT_ATTRIBUTES, ULONG, ULONG, PRTL_USER_PROCESS_PARAMETERS, PVOID, PVOID);
 static PFNNtCreateUserProcess TrueNtCreateUserProcess = NULL;
+
+
+WCHAR SelfPath[MAX_PATH];
 
 
 // The function 'HookedNtCreateFile' is an implementation that intercepts the original 'NtCreateFile' system call.
@@ -153,6 +137,7 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
     PVOID AttributeList)
 {
     NTSTATUS status;
+    DWORD dwInjectStatus;
 
     if (ProcessParameters == NULL || ProcessParameters->CommandLine.Buffer == NULL) {
 		DebugPrint(L"Hooked NtCreateUserProcess: ProcessParameters->CommandLine.Buffer is NULL");
@@ -160,12 +145,9 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
         goto exit;
 	}
 
-    DebugPrint(L"Hooked NtCreateUserProcess: %s, creating SUSPENDED", ProcessParameters->CommandLine.Buffer);
+    DebugPrint(L"Hooked NtCreateUserProcess: %s", ProcessParameters->CommandLine.Buffer);
 
-    // Definitions of dwCreationFlags don't apply here
-    // Refer to: https://captmeelo.com/redteam/maldev/2022/05/10/ntcreateuserprocess.html
-    // TODO
-
+    // Definitions of dwCreationFlags don't apply here (https://captmeelo.com/redteam/maldev/2022/05/10/ntcreateuserprocess.html)
     // According to https://medium.com/@Achilles8284/the-birth-of-a-process-part-2-97c6fb9c42a2
     // CreateProcess generally sets the THREAD_CREATE_FLAGS_CREATE_SUSPENDED flag when calling NtCreateUserProcess
     if (!(CreateThreadFlags & THREAD_CREATE_FLAGS_CREATE_SUSPENDED)) {
@@ -184,7 +166,15 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
     }
 
     // Inject self into the newly created process
+    dwInjectStatus = InjectDll(*ProcessHandle, SelfPath);
+    if (dwInjectStatus != 0) {
+        DebugPrint(L"InjectDll failed: %d", dwInjectStatus);
+        status = STATUS_INTERNAL_ERROR;
+        goto cleanup;
+    }
 
+    // Everything is successful
+    goto exit;
 
 cleanup:
     if (ProcessHandle != NULL && *ProcessHandle != NULL) {
@@ -202,7 +192,6 @@ exit:
     return status;	
 }
 
-WCHAR SelfPath[MAX_PATH];
 
 // 'DllMain' serves as the entry point when the DLL is loaded into a process. It is responsible 
 // for initiating the API detouring within the host process to facilitate the above-mentioned functionalities.

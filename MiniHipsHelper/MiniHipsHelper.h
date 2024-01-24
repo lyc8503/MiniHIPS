@@ -23,7 +23,7 @@ MINIHIPSHELPER_API int fnMiniHipsHelper(void);
 
 extern "C" {
 
-MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, const char* dllPath);
+MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, LPCWSTR lpszDllPath);
 
 }
 
