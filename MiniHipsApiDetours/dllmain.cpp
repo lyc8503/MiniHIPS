@@ -167,16 +167,17 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
 
     // Inject self into the newly created process
     dwInjectStatus = InjectDll(*ProcessHandle, SelfPath);
+    //dwInjectStatus = 0;
     if (dwInjectStatus != 0) {
         DebugPrint(L"InjectDll failed: %d", dwInjectStatus);
         status = STATUS_INTERNAL_ERROR;
-        goto cleanup;
+        goto fail;
     }
 
     // Everything is successful
     goto exit;
 
-cleanup:
+fail:
     if (ProcessHandle != NULL && *ProcessHandle != NULL) {
         TerminateProcess(*ProcessHandle, 233);
         CloseHandle(*ProcessHandle);
@@ -219,6 +220,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DebugPrint(L"GetModuleFileName failed, return");
 		return FALSE;
     }
+
+    // DEBUG: try not actually loading dll
+    // wcscpy_s(SelfPath, MAX_PATH, L"123.dll");
+
     DebugPrint(L"SelfPath: %s", SelfPath);
 
     // Dynamically load Native APIs

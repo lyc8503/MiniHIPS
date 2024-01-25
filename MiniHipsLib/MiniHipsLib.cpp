@@ -67,18 +67,19 @@ int InjectDll(HANDLE hProcess, LPCWSTR lpszDllPath)
         goto cleanup;
     }
 
-    if (WaitForSingleObject(hThread, 1000) != WAIT_OBJECT_0) {
-        dwRetCode = -6;
-		goto cleanup;
-    }
+    // TODO: some weird...
+    //if (WaitForSingleObject(hThread, 1000) != WAIT_OBJECT_0) {
+    //  dwRetCode = -6;
+	//	goto cleanup;
+    //}
 
     // If we get here, everything was successful
     dwRetCode = 0;
 
 cleanup:
-    if (lpBaseAddress != NULL) {
-        VirtualFreeEx(hProcess, lpBaseAddress, 0, MEM_RELEASE);
-    }
+    //if (lpBaseAddress != NULL) {
+    //    VirtualFreeEx(hProcess, lpBaseAddress, 0, MEM_RELEASE);
+    //}
 
     if (hThread != NULL) {
 		CloseHandle(hThread);
