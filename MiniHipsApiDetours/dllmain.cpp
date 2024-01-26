@@ -59,7 +59,7 @@ typedef NTSTATUS(NTAPI* PFNNtCreateUserProcess) (PHANDLE, PHANDLE, ACCESS_MASK, 
 static PFNNtCreateUserProcess TrueNtCreateUserProcess = NULL;
 
 
-WCHAR SelfPath[MAX_PATH];
+CHAR SelfPath[4096];
 
 
 // The function 'HookedNtCreateFile' is an implementation that intercepts the original 'NtCreateFile' system call.
@@ -137,7 +137,9 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
     PVOID AttributeList)
 {
     NTSTATUS status;
-    DWORD dwInjectStatus;
+    BOOL bUpdateImportTableSuccess;
+    DWORD dwOutputStrLen;
+    LPCSTR arrDlls[2];
 
     if (ProcessParameters == NULL || ProcessParameters->CommandLine.Buffer == NULL) {
 		DebugPrint(L"Hooked NtCreateUserProcess: ProcessParameters->CommandLine.Buffer is NULL");
@@ -166,10 +168,12 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
     }
 
     // Inject self into the newly created process
-    dwInjectStatus = InjectDll(*ProcessHandle, SelfPath);
-    //dwInjectStatus = 0;
-    if (dwInjectStatus != 0) {
-        DebugPrint(L"InjectDll failed: %d", dwInjectStatus);
+    // dwInjectStatus = InjectDll(*ProcessHandle, SelfPath);
+    arrDlls[0] = SelfPath;
+    bUpdateImportTableSuccess = DetourUpdateProcessWithDll(*ProcessHandle, arrDlls, 1);
+
+    if (!bUpdateImportTableSuccess) {
+        DebugPrint(L"DetourUpdateProcessWithDll failed.");
         status = STATUS_INTERNAL_ERROR;
         goto fail;
     }
@@ -216,13 +220,10 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     }
 
     // Retrieve the current dll's path for subsequent injection into sub-processes
-    if (GetModuleFileName(hModule, SelfPath, MAX_PATH) == 0) {
+    if (GetModuleFileNameA(hModule, SelfPath, ARRAYSIZE(SelfPath)) == 0) {
         DebugPrint(L"GetModuleFileName failed, return");
 		return FALSE;
     }
-
-    // DEBUG: try not actually loading dll
-    // wcscpy_s(SelfPath, MAX_PATH, L"123.dll");
 
     DebugPrint(L"SelfPath: %s", SelfPath);
 
@@ -254,6 +255,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         return FALSE;
     }
     
+    DetourRestoreAfterWith();
     // MessageBox(NULL, L"Hello from DLL", L"Hi", MB_OK);
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
