@@ -8,6 +8,7 @@
 #include "MiniHipsLib.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 
 MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, LPCWSTR lpszDllPath)
@@ -57,9 +58,21 @@ MINIHIPSHELPER_API WCHAR* IPCQueueWaitMsg() {
         return NULL;
     }
 
-    // TODO
-    return (WCHAR*)1;
+    // Don't forget to free the memory
+    WCHAR* szMsg = (WCHAR*) malloc(sizeof(WCHAR) * 2048);
+    if (szMsg == NULL) {
+        return NULL;
+    }
+
+    swprintf_s(szMsg, 2048, L"[%d] %d-%02d-%02d %02d:%02d:%02d.%03d %s", stMsg.dwProcessId, stMsg.stTime.wYear, stMsg.stTime.wMonth, stMsg.stTime.wDay, stMsg.stTime.wHour, stMsg.stTime.wMinute, stMsg.stTime.wSecond, stMsg.stTime.wMilliseconds, stMsg.szMsg);
+    return szMsg;
 }
+
+
+MINIHIPSHELPER_API VOID FreeBuffer(LPVOID lpBuffer) {
+    free(lpBuffer);
+}
+
 
 // This is an example of an exported variable
 MINIHIPSHELPER_API int nMiniHipsHelper = 0;

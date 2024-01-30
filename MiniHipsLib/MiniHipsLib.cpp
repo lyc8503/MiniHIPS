@@ -90,6 +90,8 @@ cleanup:
 
 
 
+// Create an boost interprocess message queue, return a pointer to the queue
+// If bServer is TRUE, create a new queue, otherwise open an existing queue
 LPVOID CreateIPCQueue(BOOL bServer) {
 
     if (bServer) {
@@ -100,11 +102,15 @@ LPVOID CreateIPCQueue(BOOL bServer) {
 
     try {
         if (bServer) {
+            boost::interprocess::permissions unrestricted_permissions;
+            unrestricted_permissions.set_unrestricted();
+
             mq = new boost::interprocess::message_queue(
                 boost::interprocess::create_only,
                 MINIHIPS_MQ_NAME,
                 MINIHIPS_MQ_MSG_MAX_COUNT,
-                MINIHIPS_MQ_MSG_SIZE);
+                MINIHIPS_MQ_MSG_SIZE,
+                unrestricted_permissions);
         }
         else {
             mq = new boost::interprocess::message_queue(
@@ -121,6 +127,8 @@ LPVOID CreateIPCQueue(BOOL bServer) {
 }
 
 
+// Read a message from the queue, blocking until a message is available
+// Return 0 on success or a negative value on failure
 DWORD IPCQueueRead(LPVOID lpQueue, MiniHipsMessage* lpMsg) {
     boost::interprocess::message_queue* mq = (boost::interprocess::message_queue*)lpQueue;
 
@@ -144,6 +152,8 @@ DWORD IPCQueueRead(LPVOID lpQueue, MiniHipsMessage* lpMsg) {
 }
 
 
+// Write a message to the queue, returning immediately
+// Return 0 on success or a negative value on failure / full queue
 DWORD IPCQueueWrite(LPVOID lpQueue, MiniHipsMessage* lpMsg) {
     boost::interprocess::message_queue* mq = (boost::interprocess::message_queue*)lpQueue;
 

@@ -62,6 +62,29 @@ static PFNNtCreateUserProcess TrueNtCreateUserProcess = NULL;
 CHAR SelfPath[4096];
 LPVOID lpQueue = NULL;
 
+BOOL SendHipsMessage(const wchar_t* format, ...) {
+    MiniHipsMessage stMsg;
+    DWORD dwRet;
+
+    va_list args;
+    va_start(args, format);
+    _vsnwprintf_s(stMsg.szMsg, ARRAYSIZE(stMsg.szMsg) - 1, _TRUNCATE, format, args);
+    stMsg.szMsg[ARRAYSIZE(stMsg.szMsg) - 1] = 0; // Ensure null-termination
+    va_end(args);
+
+    stMsg.dwProcessId = GetCurrentProcessId();
+    GetSystemTime(&stMsg.stTime);
+
+    dwRet = IPCQueueWrite(lpQueue, &stMsg);
+
+    if (dwRet != 0) {
+        DebugPrint(L"IPCQueueWrite failed, ret: %d", dwRet);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 
 // The function 'HookedNtCreateFile' is an implementation that intercepts the original 'NtCreateFile' system call.
 // It applies custom security rules to file creation operations. If a rule is violated, the function returns a STATUS_ACCESS_DENIED error.
@@ -88,6 +111,7 @@ NTSTATUS NTAPI HookedNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
     DebugPrint(L"canonicalPath: %s", canonicalPath);
     if (PathMatchSpecW(canonicalPath, TEXT("\\??\\C:\\*.txt"))) {
         DebugPrint(L"Rejected: %s", canonicalPath);
+        SendHipsMessage(L"AcceessDenied: %S", canonicalPath);
         return STATUS_ACCESS_DENIED;
     }
 
@@ -121,6 +145,7 @@ NTSTATUS NTAPI HookedNtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, P
     DebugPrint(L"canonicalPath: %s", canonicalPath);
     if (PathMatchSpecW(canonicalPath, TEXT("\\??\\C:\\*.txt"))) {
         DebugPrint(L"Rejected: %s", canonicalPath);
+        SendHipsMessage(L"AcceessDenied: %s", canonicalPath);
         return STATUS_ACCESS_DENIED;
     }
 
@@ -266,11 +291,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
         return FALSE;
     }
 
-    MiniHipsMessage stMsg;
-    stMsg.dwProcessId = GetCurrentProcessId();
-    GetSystemTime(&stMsg.stTime);
-    wcscpy_s(stMsg.szMsg, L"Hello from DLL IPC");
-    IPCQueueWrite(lpQueue, &stMsg);
+    SendHipsMessage(L"Hello, World! MiniHipsApiDetours.dll loaded.");
 
     DetourRestoreAfterWith();
     // MessageBox(NULL, L"Hello from DLL", L"Hi", MB_OK);

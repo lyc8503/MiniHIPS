@@ -25,6 +25,7 @@ extern "C" {
 
     MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, LPCWSTR lpszDllPath);
     MINIHIPSHELPER_API WCHAR* IPCQueueWaitMsg();
+    MINIHIPSHELPER_API VOID FreeBuffer(LPVOID lpBuffer);
 
 }
 
