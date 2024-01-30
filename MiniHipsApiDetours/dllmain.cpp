@@ -60,6 +60,7 @@ static PFNNtCreateUserProcess TrueNtCreateUserProcess = NULL;
 
 
 CHAR SelfPath[4096];
+LPVOID lpQueue = NULL;
 
 
 // The function 'HookedNtCreateFile' is an implementation that intercepts the original 'NtCreateFile' system call.
@@ -152,11 +153,11 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
     // Definitions of dwCreationFlags don't apply here (https://captmeelo.com/redteam/maldev/2022/05/10/ntcreateuserprocess.html)
     // According to https://medium.com/@Achilles8284/the-birth-of-a-process-part-2-97c6fb9c42a2
     // CreateProcess generally sets the THREAD_CREATE_FLAGS_CREATE_SUSPENDED flag when calling NtCreateUserProcess
-    if (!(CreateThreadFlags & THREAD_CREATE_FLAGS_CREATE_SUSPENDED)) {
-        DebugPrint(L"CreateThreadFlags & THREAD_CREATE_FLAGS_CREATE_SUSPENDED is false, return");
-        status = STATUS_INTERNAL_ERROR;
-        goto exit;
-    }
+    // if (!(CreateThreadFlags & THREAD_CREATE_FLAGS_CREATE_SUSPENDED)) {
+    //     DebugPrint(L"CreateThreadFlags & THREAD_CREATE_FLAGS_CREATE_SUSPENDED is false, return");
+    //     status = STATUS_INTERNAL_ERROR;
+    //     goto exit;
+    // }
     // CreateProcessFlags |= PROCESS_CREATE_FLAGS_SUSPENDED;
     // CreateThreadFlags |= THREAD_CREATE_FLAGS_CREATE_SUSPENDED;
 
@@ -169,6 +170,9 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
 
     // Inject self into the newly created process
     // dwInjectStatus = InjectDll(*ProcessHandle, SelfPath);
+
+    // Update the import table of the newly created process to include this DLL
+    // TODO: 32-bit support
     arrDlls[0] = SelfPath;
     bUpdateImportTableSuccess = DetourUpdateProcessWithDll(*ProcessHandle, arrDlls, 1);
 
@@ -254,6 +258,19 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         DebugPrint(L"GetProcAddress(NtCreateUserProcess) failed, return");
         return FALSE;
     }
+
+    // Create a message queue for inter-process communication
+    lpQueue = CreateIPCQueue(FALSE);
+    if (lpQueue == NULL) {
+		DebugPrint(L"CreateIPCQueue failed, return");
+		return FALSE;
+	}
+
+    MiniHipsMessage stMsg;
+    stMsg.dwProcessId = GetCurrentProcessId();
+    GetSystemTime(&stMsg.stTime);
+    wcscpy_s(stMsg.szMsg, L"Hello from DLL IPC");
+    IPCQueueWrite(lpQueue, &stMsg);
     
     DetourRestoreAfterWith();
     // MessageBox(NULL, L"Hello from DLL", L"Hi", MB_OK);

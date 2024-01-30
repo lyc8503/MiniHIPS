@@ -5,6 +5,7 @@
 #include "framework.h"
 
 #include <windows.h>
+#include <boost/interprocess/ipc/message_queue.hpp>
 
 #include "MiniHipsLib.h"
 
@@ -67,19 +68,18 @@ int InjectDll(HANDLE hProcess, LPCWSTR lpszDllPath)
         goto cleanup;
     }
 
-    // TODO: some weird...
-    //if (WaitForSingleObject(hThread, 1000) != WAIT_OBJECT_0) {
-    //  dwRetCode = -6;
-	//	goto cleanup;
-    //}
+    if (WaitForSingleObject(hThread, 1000) != WAIT_OBJECT_0) {
+        dwRetCode = -6;
+	    goto cleanup;
+    }
 
     // If we get here, everything was successful
     dwRetCode = 0;
 
 cleanup:
-    //if (lpBaseAddress != NULL) {
-    //    VirtualFreeEx(hProcess, lpBaseAddress, 0, MEM_RELEASE);
-    //}
+    if (lpBaseAddress != NULL) {
+        VirtualFreeEx(hProcess, lpBaseAddress, 0, MEM_RELEASE);
+    }
 
     if (hThread != NULL) {
 		CloseHandle(hThread);
@@ -88,3 +88,71 @@ cleanup:
     return dwRetCode;
 }
 
+
+
+LPVOID CreateIPCQueue(BOOL bServer) {
+
+    if (bServer) {
+        boost::interprocess::message_queue::remove(MINIHIPS_MQ_NAME);
+    }
+
+    boost::interprocess::message_queue *mq;
+
+    try {
+        if (bServer) {
+            mq = new boost::interprocess::message_queue(
+                boost::interprocess::create_only,
+                MINIHIPS_MQ_NAME,
+                MINIHIPS_MQ_MSG_MAX_COUNT,
+                MINIHIPS_MQ_MSG_SIZE);
+        } else {
+            mq = new boost::interprocess::message_queue(
+                boost::interprocess::open_only,
+                MINIHIPS_MQ_NAME);
+        }
+	} catch (boost::interprocess::interprocess_exception& ex) {
+	    DebugPrint(L"CreateIPCQueueFailed: %S\n", ex.what());
+	    return NULL;
+	}
+
+    return mq;
+}
+
+
+DWORD IPCQueueRead(LPVOID lpQueue, MiniHipsMessage* lpMsg) {
+	boost::interprocess::message_queue* mq = (boost::interprocess::message_queue*)lpQueue;
+
+    try {
+        boost::interprocess::message_queue::size_type sRecvd;
+        unsigned int dwPriority;
+
+        mq->receive(lpMsg, MINIHIPS_MQ_MSG_SIZE, sRecvd, dwPriority);
+
+        if (sRecvd != MINIHIPS_MQ_MSG_SIZE) {
+			DebugPrint(L"IPCQueueReadFailed: sRecvd != MINIHIPS_MQ_MSG_SIZE\n");
+			return -2;
+		}
+    } catch (boost::interprocess::interprocess_exception& ex) {
+		DebugPrint(L"IPCQueueReadFailed: %S\n", ex.what());
+		return -1;
+	}
+
+	return 0;
+}
+
+
+DWORD IPCQueueWrite(LPVOID lpQueue, MiniHipsMessage* lpMsg) {
+	boost::interprocess::message_queue* mq = (boost::interprocess::message_queue*)lpQueue;
+
+    try {
+        if (!mq->try_send(lpMsg, MINIHIPS_MQ_MSG_SIZE, 0)) {
+            DebugPrint(L"IPCQueueWriteFailed: queue is full\n");
+            return -2;
+        }
+    } catch (boost::interprocess::interprocess_exception& ex) {
+		DebugPrint(L"IPCQueueWriteFailed: %S\n", ex.what());
+		return -1;
+	}
+
+	return 0;
+}
