@@ -7,6 +7,8 @@
 
 #include "MiniHipsLib.h"
 
+#include <stdio.h>
+
 
 MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, LPCWSTR lpszDllPath)
 {
@@ -36,6 +38,27 @@ cleanup:
 	}
 
 	return 0;
+}
+
+LPVOID lpQueue;
+
+MINIHIPSHELPER_API WCHAR* IPCQueueWaitMsg() {
+
+	if (lpQueue == NULL) {
+		lpQueue = CreateIPCQueue(TRUE);
+		if (lpQueue == NULL) {
+			return NULL;
+		}
+	}
+
+	MiniHipsMessage stMsg;
+	int dwRet = IPCQueueRead(lpQueue, &stMsg);
+	if (dwRet != 0) {
+		return NULL;
+	}
+
+	// TODO
+	return (WCHAR*) 1;
 }
 
 // This is an example of an exported variable
