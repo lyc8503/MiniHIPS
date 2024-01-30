@@ -74,26 +74,26 @@ NTSTATUS NTAPI HookedNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
     WCHAR canonicalPath[MAX_PATH + 100];
     HRESULT hr;
     if (ObjectAttributes == NULL || ObjectAttributes->ObjectName == NULL || ObjectAttributes->ObjectName->Buffer == NULL) {
-		DebugPrint(L"Hooked NtCreateFile: ObjectAttributes->ObjectName->Buffer is NULL");
-		goto origin;
-	}
+        DebugPrint(L"Hooked NtCreateFile: ObjectAttributes->ObjectName->Buffer is NULL");
+        goto origin;
+    }
 
     DebugPrint(L"Hooked NtCreateFile: %s", ObjectAttributes->ObjectName->Buffer);
 
     hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), ObjectAttributes->ObjectName->Buffer, PATHCCH_ALLOW_LONG_PATHS);
     if (!SUCCEEDED(hr)) {
-		return STATUS_INTERNAL_ERROR;
-	}
-    
-	DebugPrint(L"canonicalPath: %s", canonicalPath);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    DebugPrint(L"canonicalPath: %s", canonicalPath);
     if (PathMatchSpecW(canonicalPath, TEXT("\\??\\C:\\*.txt"))) {
-		DebugPrint(L"Rejected: %s", canonicalPath);
-		return STATUS_ACCESS_DENIED;
-	}
+        DebugPrint(L"Rejected: %s", canonicalPath);
+        return STATUS_ACCESS_DENIED;
+    }
 
 origin:
-	return TrueNtCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, AllocationSize, FileAttributes, ShareAccess,
-        		CreateDisposition, CreateOptions, EaBuffer, EaLength);
+    return TrueNtCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, AllocationSize, FileAttributes, ShareAccess,
+        CreateDisposition, CreateOptions, EaBuffer, EaLength);
 }
 
 
@@ -104,28 +104,28 @@ NTSTATUS NTAPI HookedNtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, P
 {
     //MessageBox(NULL, L"Hooked NtOpenFile", L"Hi", MB_OK);
 
-	WCHAR canonicalPath[MAX_PATH + 100];
-	HRESULT hr;
+    WCHAR canonicalPath[MAX_PATH + 100];
+    HRESULT hr;
     if (ObjectAttributes == NULL || ObjectAttributes->ObjectName == NULL || ObjectAttributes->ObjectName->Buffer == NULL) {
         DebugPrint(L"Hooked NtOpenFile: ObjectAttributes->ObjectName->Buffer is NULL");
         goto origin;
     }
 
-	DebugPrint(L"Hooked NtOpenFile: %s", ObjectAttributes->ObjectName->Buffer);
+    DebugPrint(L"Hooked NtOpenFile: %s", ObjectAttributes->ObjectName->Buffer);
 
-	hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), ObjectAttributes->ObjectName->Buffer, PATHCCH_ALLOW_LONG_PATHS);
+    hr = PathCchCanonicalizeEx(canonicalPath, ARRAYSIZE(canonicalPath), ObjectAttributes->ObjectName->Buffer, PATHCCH_ALLOW_LONG_PATHS);
     if (!SUCCEEDED(hr)) {
-		return STATUS_INTERNAL_ERROR;
-	}
-	
-	DebugPrint(L"canonicalPath: %s", canonicalPath);
-    if (PathMatchSpecW(canonicalPath, TEXT("\\??\\C:\\*.txt"))) {
-		DebugPrint(L"Rejected: %s", canonicalPath);
-		return STATUS_ACCESS_DENIED;
-	}
+        return STATUS_INTERNAL_ERROR;
+    }
 
- origin:
-	return TrueNtOpenFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, ShareAccess, OpenOptions);
+    DebugPrint(L"canonicalPath: %s", canonicalPath);
+    if (PathMatchSpecW(canonicalPath, TEXT("\\??\\C:\\*.txt"))) {
+        DebugPrint(L"Rejected: %s", canonicalPath);
+        return STATUS_ACCESS_DENIED;
+    }
+
+origin:
+    return TrueNtOpenFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, ShareAccess, OpenOptions);
 }
 
 
@@ -143,10 +143,10 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
     LPCSTR arrDlls[2];
 
     if (ProcessParameters == NULL || ProcessParameters->CommandLine.Buffer == NULL) {
-		DebugPrint(L"Hooked NtCreateUserProcess: ProcessParameters->CommandLine.Buffer is NULL");
+        DebugPrint(L"Hooked NtCreateUserProcess: ProcessParameters->CommandLine.Buffer is NULL");
         status = STATUS_INTERNAL_ERROR;
         goto exit;
-	}
+    }
 
     DebugPrint(L"Hooked NtCreateUserProcess: %s", ProcessParameters->CommandLine.Buffer);
 
@@ -162,7 +162,7 @@ NTSTATUS NTAPI HookedNtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHa
     // CreateThreadFlags |= THREAD_CREATE_FLAGS_CREATE_SUSPENDED;
 
     status = TrueNtCreateUserProcess(ProcessHandle, ThreadHandle, ProcessDesiredAccess, ThreadDesiredAccess, ProcessObjectAttributes,
-        						ThreadObjectAttributes, CreateProcessFlags, CreateThreadFlags, ProcessParameters, CreateInfo, AttributeList);
+        ThreadObjectAttributes, CreateProcessFlags, CreateThreadFlags, ProcessParameters, CreateInfo, AttributeList);
     if (!NT_SUCCESS(status)) {
         // Process creation failed, return original status
         goto exit;
@@ -189,32 +189,32 @@ fail:
     if (ProcessHandle != NULL && *ProcessHandle != NULL) {
         TerminateProcess(*ProcessHandle, 233);
         CloseHandle(*ProcessHandle);
-		*ProcessHandle = NULL;
-	}
+        *ProcessHandle = NULL;
+    }
 
     if (ThreadHandle != NULL && *ThreadHandle != NULL) {
-		CloseHandle(*ThreadHandle);
-		*ThreadHandle = NULL;
-	}
+        CloseHandle(*ThreadHandle);
+        *ThreadHandle = NULL;
+    }
 
 exit:
-    return status;	
+    return status;
 }
 
 
 // 'DllMain' serves as the entry point when the DLL is loaded into a process. It is responsible 
 // for initiating the API detouring within the host process to facilitate the above-mentioned functionalities.
-BOOL APIENTRY DllMain( HMODULE hModule,
-                       DWORD  ul_reason_for_call,
-                       LPVOID lpReserved
-                     )
+BOOL APIENTRY DllMain(HMODULE hModule,
+    DWORD  ul_reason_for_call,
+    LPVOID lpReserved
+)
 {
     DebugPrint(L"Enter MiniHipsApiDetours.dll DllMain, PID: %lu, reason: %lu", GetCurrentProcessId(), ul_reason_for_call);
 
     if (ul_reason_for_call != DLL_PROCESS_ATTACH) {
         // Return on DLL_THREAD_ATTACH, DLL_THREAD_DETACH and DLL_PROCESS_DETACH
-		return TRUE;
-	}
+        return TRUE;
+    }
 
     // https://github.com/microsoft/Detours/wiki/OverviewHelpers
     // Immediately return TRUE if DetourIsHelperProcess return TRUE. 
@@ -226,7 +226,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     // Retrieve the current dll's path for subsequent injection into sub-processes
     if (GetModuleFileNameA(hModule, SelfPath, ARRAYSIZE(SelfPath)) == 0) {
         DebugPrint(L"GetModuleFileName failed, return");
-		return FALSE;
+        return FALSE;
     }
 
     DebugPrint(L"SelfPath: %s", SelfPath);
@@ -248,9 +248,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     TrueNtOpenFile = (PFNNtOpenFile)GetProcAddress(hNtdll, "NtOpenFile");
     DebugPrint(L"GetProcAddress(NtOpenFile) = %p", TrueNtOpenFile);
     if (TrueNtOpenFile == NULL) {
-		DebugPrint(L"GetProcAddress(NtOpenFile) failed, return");
-		return FALSE;
-	}
+        DebugPrint(L"GetProcAddress(NtOpenFile) failed, return");
+        return FALSE;
+    }
 
     TrueNtCreateUserProcess = (PFNNtCreateUserProcess)GetProcAddress(hNtdll, "NtCreateUserProcess");
     DebugPrint(L"GetProcAddress(NtCreateUserProcess) = %p", TrueNtCreateUserProcess);
@@ -262,16 +262,16 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     // Create a message queue for inter-process communication
     lpQueue = CreateIPCQueue(FALSE);
     if (lpQueue == NULL) {
-		DebugPrint(L"CreateIPCQueue failed, return");
-		return FALSE;
-	}
+        DebugPrint(L"CreateIPCQueue failed, return");
+        return FALSE;
+    }
 
     MiniHipsMessage stMsg;
     stMsg.dwProcessId = GetCurrentProcessId();
     GetSystemTime(&stMsg.stTime);
     wcscpy_s(stMsg.szMsg, L"Hello from DLL IPC");
     IPCQueueWrite(lpQueue, &stMsg);
-    
+
     DetourRestoreAfterWith();
     // MessageBox(NULL, L"Hello from DLL", L"Hi", MB_OK);
     DetourTransactionBegin();
@@ -282,9 +282,9 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     DetourAttach(&(PVOID&)TrueNtCreateUserProcess, HookedNtCreateUserProcess);
 
     if (DetourTransactionCommit() != NO_ERROR) {
-		DebugPrint(L"DetourTransactionCommit failed, return");
-		return FALSE;
-	}
+        DebugPrint(L"DetourTransactionCommit failed, return");
+        return FALSE;
+    }
     DebugPrint(L"AfterDetourAttach NtCreateFile = %p", TrueNtCreateFile);
     DebugPrint(L"AfterDetourAttach NtOpenFile = %p", TrueNtOpenFile);
     DebugPrint(L"AfterDetourAttach NtCreateUserProcess = %p", TrueNtCreateUserProcess);

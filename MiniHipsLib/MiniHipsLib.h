@@ -5,9 +5,9 @@
 
 
 typedef struct _MiniHipsMessage {
-	DWORD dwProcessId;
-	SYSTEMTIME stTime;
-	WCHAR szMsg[1024];
+    DWORD dwProcessId;
+    SYSTEMTIME stTime;
+    WCHAR szMsg[1024];
 } MiniHipsMessage;
 
 

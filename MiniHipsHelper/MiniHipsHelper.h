@@ -13,8 +13,8 @@
 // This class is exported from the dll
 class MINIHIPSHELPER_API CMiniHipsHelper {
 public:
-	CMiniHipsHelper(void);
-	// TODO: add your methods here.
+    CMiniHipsHelper(void);
+    // TODO: add your methods here.
 };
 
 extern MINIHIPSHELPER_API int nMiniHipsHelper;
@@ -23,8 +23,8 @@ MINIHIPSHELPER_API int fnMiniHipsHelper(void);
 
 extern "C" {
 
-MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, LPCWSTR lpszDllPath);
-MINIHIPSHELPER_API WCHAR* IPCQueueWaitMsg();
+    MINIHIPSHELPER_API int InjectDllPid(DWORD dwProcessId, LPCWSTR lpszDllPath);
+    MINIHIPSHELPER_API WCHAR* IPCQueueWaitMsg();
 
 }
 

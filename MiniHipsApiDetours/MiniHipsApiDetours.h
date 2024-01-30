@@ -13,8 +13,8 @@
 // This class is exported from the dll
 class MINIHIPSAPIDETOURS_API CMiniHipsApiDetours {
 public:
-	CMiniHipsApiDetours(void);
-	// TODO: add your methods here.
+    CMiniHipsApiDetours(void);
+    // TODO: add your methods here.
 };
 
 extern MINIHIPSAPIDETOURS_API int nMiniHipsApiDetours;

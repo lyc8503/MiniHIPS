@@ -7,7 +7,7 @@
 
 
 // This is an example of an exported variable
-MINIHIPSAPIDETOURS_API int nMiniHipsApiDetours=0;
+MINIHIPSAPIDETOURS_API int nMiniHipsApiDetours = 0;
 
 // This is an example of an exported function.
 MINIHIPSAPIDETOURS_API int fnMiniHipsApiDetours(void)
